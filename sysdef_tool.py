@@ -4,6 +4,8 @@ import multiprocessing
 import logging
 import subprocess
 import datetime
+import json
+import sys
 import re
 
 # From IPF
@@ -95,6 +97,7 @@ class ComputingShare(Share):
         self.EnvironmentID = []                 # list of string
         ### Extra
         self.MaxCPUsPerNode = None              # integer
+        self.QoS = None                         # string
         # use Endpoint, Resource, Service, Activity from Share
         #   instead of ComputingEndpoint, ExecutionEnvironment, ComputingService, ComputingActivity
 
@@ -288,9 +291,7 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         if status != 0:
             raise StepError("scontrol failed: "+output+"\n")
         partition_strs = output.split("\n\n")
-        #print(partition_strs) # TMP
         partitions = [share for share in map(self._getShare,partition_strs) if self._includeQueue(share.Name)]
-        print(partitions[0])
 
         # create shares for reservations
         scontrol = self.params.get("scontrol","scontrol")
@@ -322,8 +323,10 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         State = self.params.get("State","State=(\S+)")
         PreemptMode = self.params.get("PreemptMode","PreemptMode=(\S+)")
         MaxCPUsPerNode = self.params.get("MaxCPUsPerNode", "MaxCPUsPerNode=(\S+)")
+        QoS = self.params.get("QoS", "QoS=(\S+)")
         #Tres = self.param.gets("Tres", "Tres=(\S+=)")
 
+        check_qos = []
         m = re.search(PartitionName,partition_str)
         if m is not None:
             share.Name = m.group(1)
@@ -331,24 +334,48 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         m = re.search(MaxNodes,partition_str)
         if m is not None and m.group(1) != "UNLIMITED":
             share.MaxSlotsPerJob = int(m.group(1))
+        else:
+            check_qos.append('MaxSlotsPerJob')
         m = re.search(MinNodes,partition_str)
         if m is not None and m.group(1) != "UNLIMITED":
             share.MinSlotsPerJob = int(m.group(1))
+        else:
+            check_qos.append('MinSlotsPerJob')
         m = re.search(MaxMemPerNode,partition_str)
         if m is not None and m.group(1) != "UNLIMITED":
             share.MaxMainMemory = int(m.group(1))
+        else:
+            check_qos.append('MaxMainMemory')
         m = re.search(DefaultTime,partition_str)
         if m is not None and m.group(1) != "NONE":
             share.DefaultWallTime = _getDuration(m.group(1))
+        else:
+            check_qos.append('DefaultWallTime')
         m = re.search(MaxTime,partition_str)
         if m is not None and m.group(1) != "UNLIMITED":
             share.MaxWallTime = _getDuration(m.group(1))
+        else:
+            check_qos.append('MaxWallTime')
         m = re.search(MaxCPUsPerNode, partition_str)
         if m is not None and m.group(1) != "UNLIMITED":
             share.MaxCPUsPerNode = int(m.group(1))
+        else:
+            check_qos.append('MaxCPUsPerNode')
         #m = re.search(Tres, partition_str)
         #if m is not None:
         #    print(Tres)
+        #import sys
+        print(share)
+        #print(check_qos)
+        #sys.exit()
+        m = re.search(QoS, partition_str)
+        #print(m)
+        if m is not None and m.group(1) != 'N/A':
+            share.QoS = m.group(1)
+            print(share.QoS)
+            share = self._getQoS(share, check_qos)
+        print(share)
+        sys.exit(1)
 
         m = re.search(PreemptMode,partition_str)
         if m is not None:
@@ -399,6 +426,45 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
                         share.ServingState = "closed"
         return share
 
+    def _getfieldid(self, header, field):
+        header_fields = header.split('|')
+        ind = header_fields.index(field)
+        return ind
+
+    def _getQoS(self, share, check_qos):
+        qosname = share.QoS
+        print(f'in getQoS checking: {check_qos}')
+        sacctmgr = self.params.get("sacctmgr","sacctmgr")
+        cmd = sacctmgr + " show qos -P " + qosname
+        self.debug("running "+cmd)
+        status, output = subprocess.getstatusoutput(cmd)
+        if status != 0:
+            raise StepError("sacctmgr failed: "+output+"\n")
+        out = output.split("\n")
+        maxtresind = self._getfieldid(out[0], 'MaxTRES')
+        fields = out[1].split('|')
+        if 'MinSlotsPerJob' in check_qos:
+            pass
+        if 'MaxSlotsPerJob' in check_qos:
+            m = re.search('node=(\S+)',fields[maxtresind])
+            if m is not None:
+                share.MaxSlotsPerJob = int(m.group(1))
+        if 'MinCPUsPerNode' in check_qos:
+            pass
+        if 'MaxCPUsPerNode' in check_qos:
+            pass
+        if 'MinMainMemory' in check_qos:
+            pass
+        if 'MaxMainMemory' in check_qos:
+            pass
+        if 'MinWallTime' in check_qos:
+            pass
+        if 'MaxWallTime' in check_qos:
+            ind = self._getfieldid(out[0], 'MaxWall')
+            share.MaxWallTime = _getDuration(fields[ind])
+        return share
+
+
 def _getDuration(dstr):
     m = re.search("(\d+)-(\d+):(\d+):(\d+)",dstr)
     if m is not None:
@@ -411,7 +477,6 @@ def _getDuration(dstr):
 def convert_to_d(p):
     d = {}
     # List of needed queue information
-    print(p.MappingQueue)
     #print(p.MaxSlotsPerJob)
     d['name'] = p.MappingQueue
     d['hpcQueueName'] = p.MappingQueue
@@ -424,17 +489,17 @@ def convert_to_d(p):
     d['minMemoryMB'] = 0
     d['maxMemoryMB'] = p.MaxMainMemory
     d['minMinutes'] = int(p.MinWallTime/60.0) if p.MinWallTime else 0
-    d['maxMinutes'] = int(p.MaxWallTime/60.0)
-    print(d)
-    import sys
-    sys.exit()
+    if p.MaxWallTime:
+        d['maxMinutes'] = int(p.MaxWallTime/60.0)
     return d
 
 if __name__ == '__main__':
     step = ComputingSharesStep()
     partitions = step._run()
+    d = []
     for p in partitions:
-        if p.MappingQueue != 'parallel':
+        if p.MappingQueue != 'small':
             continue
-        d = convert_to_d(p)
-        print(d)
+        d.append(convert_to_d(p))
+    with open('batchLogicalQueues.json', 'w') as f:
+      json.dump(d, f, indent=4)
