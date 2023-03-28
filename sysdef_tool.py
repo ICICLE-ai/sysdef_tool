@@ -98,6 +98,7 @@ class ComputingShare(Share):
         ### Extra
         self.MaxCPUsPerNode = None              # integer
         self.QoS = None                         # string
+        self.maxJobsPerUser = None             # integer
         # use Endpoint, Resource, Service, Activity from Share
         #   instead of ComputingEndpoint, ExecutionEnvironment, ComputingService, ComputingActivity
 
@@ -326,7 +327,7 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         QoS = self.params.get("QoS", "QoS=(\S+)")
         #Tres = self.param.gets("Tres", "Tres=(\S+=)")
 
-        check_qos = []
+        check_qos = ['maxJobsPerUser']
         m = re.search(PartitionName,partition_str)
         if m is not None:
             share.Name = m.group(1)
@@ -361,21 +362,10 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
             share.MaxCPUsPerNode = int(m.group(1))
         else:
             check_qos.append('MaxCPUsPerNode')
-        #m = re.search(Tres, partition_str)
-        #if m is not None:
-        #    print(Tres)
-        #import sys
-        print(share)
-        #print(check_qos)
-        #sys.exit()
         m = re.search(QoS, partition_str)
-        #print(m)
         if m is not None and m.group(1) != 'N/A':
             share.QoS = m.group(1)
-            print(share.QoS)
             share = self._getQoS(share, check_qos)
-        print(share)
-        sys.exit(1)
 
         m = re.search(PreemptMode,partition_str)
         if m is not None:
@@ -433,7 +423,6 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
 
     def _getQoS(self, share, check_qos):
         qosname = share.QoS
-        print(f'in getQoS checking: {check_qos}')
         sacctmgr = self.params.get("sacctmgr","sacctmgr")
         cmd = sacctmgr + " show qos -P " + qosname
         self.debug("running "+cmd)
@@ -462,6 +451,9 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         if 'MaxWallTime' in check_qos:
             ind = self._getfieldid(out[0], 'MaxWall')
             share.MaxWallTime = _getDuration(fields[ind])
+        if 'maxJobsPerUser' in check_qos:
+          ind = self._getfieldid(out[0], 'MaxSubmitPU')
+          share.maxJobsPerUser = int(fields[ind])
         return share
 
 
@@ -477,11 +469,10 @@ def _getDuration(dstr):
 def convert_to_d(p):
     d = {}
     # List of needed queue information
-    #print(p.MaxSlotsPerJob)
     d['name'] = p.MappingQueue
     d['hpcQueueName'] = p.MappingQueue
-    #d['maxJobs'] =
-    #d['maxJobsPerUser'] =
+    d['maxJobs'] = None
+    d['maxJobsPerUser'] = p.maxJobsPerUser
     d['minNodeCount'] = p.MinSlotsPerJob
     d['maxNodeCount'] = p.MaxSlotsPerJob
     d['minCoresPerNode'] = 1
@@ -493,13 +484,28 @@ def convert_to_d(p):
         d['maxMinutes'] = int(p.MaxWallTime/60.0)
     return d
 
+def fill_missing(partition):
+    for k, v in partition.items():
+        if v is None:
+            newval = input(f'Enter value of {k} for parition {partition["name"]}: ')
+            newval = int(newval) if newval.isdigit() else newval
+            partition[k] = newval
+    return partition
+
 if __name__ == '__main__':
+    if len(sys.argv) == 2 and sys.argv[1] == '-b':
+        interactive = False
+    else:
+        interactive = True
     step = ComputingSharesStep()
     partitions = step._run()
     d = []
     for p in partitions:
         if p.MappingQueue != 'small':
             continue
-        d.append(convert_to_d(p))
+        part = convert_to_d(p)
+        if interactive:
+            part = fill_missing(part)
+        d.append(part)
     with open('batchLogicalQueues.json', 'w') as f:
       json.dump(d, f, indent=4)
