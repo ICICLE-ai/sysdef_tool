@@ -450,10 +450,12 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
             pass
         if 'MaxWallTime' in check_qos:
             ind = self._getfieldid(out[0], 'MaxWall')
-            share.MaxWallTime = _getDuration(fields[ind])
+            if fields[ind] != '':
+                share.MaxWallTime = _getDuration(fields[ind])
         if 'maxJobsPerUser' in check_qos:
           ind = self._getfieldid(out[0], 'MaxSubmitPU')
-          share.maxJobsPerUser = int(fields[ind])
+          if fields[ind] != '':
+              share.maxJobsPerUser = int(fields[ind])
         return share
 
 
@@ -501,8 +503,6 @@ if __name__ == '__main__':
     partitions = step._run()
     d = []
     for p in partitions:
-        if p.MappingQueue != 'small':
-            continue
         part = convert_to_d(p)
         if interactive:
             part = fill_missing(part)
