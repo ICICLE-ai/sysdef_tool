@@ -500,7 +500,7 @@ def convert_to_d(p):
     d['minMinutes'] = int(p.MinWallTime/60.0) if p.MinWallTime else 0
     if p.MaxWallTime:
         d['maxMinutes'] = int(p.MaxWallTime/60.0)
-    return d
+    return {k: v for k, v in d.items() if v is not None}
 
 def fill_missing(partition):
     for k, v in partition.items():
