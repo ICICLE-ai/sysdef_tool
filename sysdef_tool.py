@@ -265,6 +265,7 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         self._acceptParameter("PartitionName","Regular Expression to parse PartitionName (default 'PartitionName=(\S+)')",False)
         self._acceptParameter("MaxNodes","Regular Expression to parse MaxNodes (default 'MaxNodes=(\S+)')",False)
         self._acceptParameter("MaxMemPerNode","Regular Expression to parse MaxMemPerNode (default 'MaxMemPerNode=(\S+)')",False)
+        self._acceptParameter("MaxMemPerCPU","Regular Expression to parse MaxMemPerCPU (default 'MaxMemPerCPU=(\S+)')",False)
         self._acceptParameter("DefaultTime","Regular Expression to parse DefaultTime (default 'DefaultTime=(\S+)')",False)
         self._acceptParameter("MaxTime","Regular Expression to parse MaxTime (default 'MaxTime=(\S+)')",False)
         self._acceptParameter("PreemptMode","Regular Expression to parse PreemptMode (default 'PreemptMode=(\S+)')",False)
@@ -279,6 +280,7 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         PartitionName = self.params.get("PartitionName","PartitionName=(\S+)")
         MaxNodes = self.params.get("MaxNodes","MaxNodes=(\S+)")
         MaxMemPerNode = self.params.get("MaxMemPerNode","MaxMemPerNode=(\S+)")
+        MaxMemPerCPU = self.params.get("MaxMemPerCPU","MaxMemPerCPU=(\S+)")
         DefaultTime = self.params.get("DefaultTime","DefaultTime=(\S+)")
         MaxTime = self.params.get("MaxTime","MaxTime=(\S+)")
         State = self.params.get("State","State=(\S+)")
@@ -316,6 +318,7 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         MinNodes = self.params.get("MinNodes","MinNodes=(\S+)")
         MaxNodes = self.params.get("MaxNodes","MaxNodes=(\S+)")
         MaxMemPerNode = self.params.get("MaxMemPerNode","MaxMemPerNode=(\S+)")
+        MaxMemPerCPU = self.params.get("MaxMemPerCPU","MaxMemPerCPU=(\S+)")
         DefaultTime = self.params.get("DefaultTime","DefaultTime=(\S+)")
         MaxTime = self.params.get("MaxTime","MaxTime=(\S+)")
         State = self.params.get("State","State=(\S+)")
@@ -342,11 +345,6 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
             share.MinSlotsPerJob = int(m.group(1))
         else:
             check_qos.append('MinSlotsPerJob')
-        m = re.search(MaxMemPerNode,partition_str)
-        if m is not None and m.group(1) != "UNLIMITED":
-            share.MaxMainMemory = int(m.group(1))
-        else:
-            check_qos.append('MaxMainMemory')
         m = re.search(DefaultTime,partition_str)
         if m is not None and m.group(1) != "NONE":
             share.DefaultWallTime = _getDuration(m.group(1))
@@ -362,6 +360,14 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
             share.MaxCPUsPerNode = int(m.group(1))
         else:
             check_qos.append('MaxCPUsPerNode')
+        m = re.search(MaxMemPerNode,partition_str)
+        if m is not None and m.group(1) != "UNLIMITED":
+            share.MaxMainMemory = int(m.group(1))
+        else:
+            m = re.search(MaxMemPerCPU, partition_str)
+            if m is not None and m.group(1) != "UNLIMITED" and share.MaxCPUsPerNode is not None:
+                share.MaxMainMemory = int(m.group(1)) * int(share.MaxCPUsPerNode)
+            check_qos.append('MaxMainMemory')
         m = re.search(QoS, partition_str)
         if m is not None and m.group(1) != 'N/A':
             share.QoS = m.group(1)
