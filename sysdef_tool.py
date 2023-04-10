@@ -8,7 +8,11 @@ import json
 import sys
 import re
 
-# From IPF
+# Note: The classes Data, Entity, Share, ComputingShare, Step, GlueStep,
+# ResourceName, ComputingActivities, ComputingShares,
+# computing_share_ComputingSharesStep, and ComputingSharesStep
+# were adapted from the IPF tool (see https://github.com/XSEDE/ipf).
+
 class Data(object):
     def __init__(self, id=None):
         self.id = id         # an identifier for the content of the document - may be used when publishing
