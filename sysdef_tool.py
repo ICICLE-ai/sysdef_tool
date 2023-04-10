@@ -99,6 +99,8 @@ class ComputingShare(Share):
         self.MaxCPUsPerNode = None              # integer
         self.QoS = None                         # string
         self.maxJobsPerUser = None             # integer
+        self.PartitionNodes = None             # integer
+        self.PartitionCPUs = None             # integer
         # use Endpoint, Resource, Service, Activity from Share
         #   instead of ComputingEndpoint, ExecutionEnvironment, ComputingService, ComputingActivity
 
@@ -327,6 +329,8 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         State = self.params.get("State","State=(\S+)")
         PreemptMode = self.params.get("PreemptMode","PreemptMode=(\S+)")
         MaxCPUsPerNode = self.params.get("MaxCPUsPerNode", "MaxCPUsPerNode=(\S+)")
+        PartitionNodes = self.params.get("PartitionNodes", "TotalNodes=(\S+)")
+        PartitionCPUs = self.params.get("PartitionCPUs", "TotalCPUs=(\S+)")
         QoS = self.params.get("QoS", "QoS=(\S+)")
         #Tres = self.param.gets("Tres", "Tres=(\S+=)")
 
@@ -359,7 +363,12 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         if m is not None and m.group(1) != "UNLIMITED":
             share.MaxCPUsPerNode = int(m.group(1))
         else:
-            check_qos.append('MaxCPUsPerNode')
+            m1 = re.search(PartitionNodes, partition_str)
+            m2 = re.search(PartitionCPUs, partition_str)
+            if m1 is not None and m1.group(1) != "UNLIMITED" and m2 is not None and m2.group(1) != "UNLIMITED":
+                share.MaxCPUsPerNode = int(int(m2.group(1)) / int(m1.group(1)))
+            else:
+                check_qos.append('MaxCPUsPerNode')
         m = re.search(MaxMemPerNode,partition_str)
         if m is not None and m.group(1) != "UNLIMITED":
             share.MaxMainMemory = int(m.group(1))
@@ -367,7 +376,8 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
             m = re.search(MaxMemPerCPU, partition_str)
             if m is not None and m.group(1) != "UNLIMITED" and share.MaxCPUsPerNode is not None:
                 share.MaxMainMemory = int(m.group(1)) * int(share.MaxCPUsPerNode)
-            check_qos.append('MaxMainMemory')
+            else:
+                check_qos.append('MaxMainMemory')
         m = re.search(QoS, partition_str)
         if m is not None and m.group(1) != 'N/A':
             share.QoS = m.group(1)
