@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+import os
+import socket
+import shutil
+import argparse
 import multiprocessing
 import logging
 import subprocess
@@ -506,26 +510,163 @@ def convert_to_d(p):
         d['maxMinutes'] = int(p.MaxWallTime/60.0)
     return {k: v for k, v in d.items() if v is not None}
 
-def fill_missing(partition):
+# Checks if they key-value pair is a valid option.
+# If not, raise appropriate error message to user
+def check_kvpair(key, val, info, options, interactive):
+    if interactive and key in ['id'] and (val == None or val == ''):
+        raise Exception(f'\"{key}\" is required')
+    #if val is None:
+    #    return
+
+def fill_missing_partition(partition):
     for k, v in partition.items():
         if v is None:
-            newval = input(f'Enter value of {k} for parition {partition["name"]}: ')
-            newval = int(newval) if newval.isdigit() else newval
+            newval = input(f'Enter value of \"{k}\" for parition {partition["name"]}: ')
+            newval = int(newval) if newval.isdigit() else None if newval == '' else newval
             partition[k] = newval
     return partition
 
-if __name__ == '__main__':
-    if len(sys.argv) == 2 and sys.argv[1] == '-b':
-        interactive = False
+def fill_missing_info(info, defaults, options, interactive):
+    for k, v in info.items():
+        if v is None:
+            valid = False
+            newval = ''
+            if interactive:
+                while not valid:
+                    newval = input(f'Enter value of \"{k}\"' + (f' [{defaults[k]}]' if k in defaults else f' [{"/".join([str(k) for k in options[k]])}]' if k in options  else '') + ': ')
+                    if k in options and newval != '' and newval not in options[k]:
+                        valid = False
+                    else:
+                        valid = True
+            if not newval and k in defaults:
+                newval = defaults[k]
+            newval = int(newval) if type(newval) == str and newval.isdigit() else None if newval == '' else newval
+            info[k] = newval
+        #check_kvpair(k, v, info, options, interactive)
+    return info
+
+def get_hostname():
+    cmd = "sacctmgr show cluster -nP "
+    status, output = subprocess.getstatusoutput(cmd)
+    if status != 0:
+        raise StepError("sacctmgr failed: "+output+"\n")
+    clusters = [s.split("|")[0] for s in output.split('\n')]
+    hostname = socket.gethostname()
+    for cluster in clusters:
+        if cluster in hostname:
+            return cluster
+    return hostname
+
+def get_port():
+    ssh_connection = os.getenv('SSH_CONNECTION')
+    if ssh_connection:
+        _, _, _, port = ssh_connection.split()
+        return port
     else:
-        interactive = True
+        return None
+
+# Check if singularity or docker are in the PATH.
+# If neither, we cannot automatically determine the runtime
+def get_runtime():
+    if shutil.which('singularity'):
+        return 'SINGULARITY'
+    elif shutil.which('docker'):
+        return 'DOCKER'
+
+def get_defaultqueue():
+    status, output = subprocess.getstatusoutput('sinfo -o "%P"')
+    if status != 0:
+        raise StepError("sinfo failed: " + output + '\n')
+    queues = output.split('\n')
+    for q in queues:
+        if '*' in q:
+            return q[:-1]
+
+def get_system_info(interactive):
+    system_info = dict.fromkeys(['id',
+                                 'description',
+                                 'systemType',
+                                 'owner',
+                                 'host',
+                                 'enabled',
+                                 'effectiveUserId',
+                                 'defaultAuthnMethod',
+                                 'authnCredential',
+                                 #'bucketName',
+                                 #'dtnSystemId',
+                                 #'dtnMountPoint',
+                                 #'dtnMountSourcePath',
+                                 'isDtn',
+                                 'rootDir',
+                                 'port',
+                                 #'useProxy',
+                                 #'proxyHost',
+                                 #'proxyPort',
+                                 'canExec',
+                                 'canRunBatch',
+                                 'jobRuntimes',
+                                 'jobWorkingDir',
+                                 #'jobEnvVariables',
+                                 'jobMaxJobs',
+                                 'jobMaxJobsPerUser',
+                                 'batchScheduler',
+                                 'batchDefaultLogicalQueue',
+                                 'tags',
+                                 'notes'
+                                ])
+
+    defaults = {'host': get_hostname(),
+                'enabled' : True,
+                'effectiveUserId': '${apiUserId}',
+                'defaultAuthnMethod': 'PKI_KEYS',
+                'rootDir': '/',
+                'port': get_port(),
+                #'owner': os.getlogin(),
+                'systemType': 'LINUX',
+                'jobRuntimes': get_runtime(),
+                'id': f'{get_hostname()}-{os.getlogin()}',
+                'batchDefaultLogicalQueue': get_defaultqueue(),
+                'jobWorkingDir': 'HOST_EVAL($HOME)/jobs/${JobUUID}'}
+    options = {'jobRuntimes': ['SINGULARITY', 'DOCKER'],
+               'useProxy': [True, False],
+               'defaultAuthnMethod': ['PASSWORD', 'PKI_KEYS', 'ACCESS_KEY'],
+               'systemType': ['LINUX', 'S3', 'IRODS']}
+    system_info['canExec'] = True
+    system_info['canRunBatch'] = True
+    system_info['batchScheduler'] = 'SLURM'
+    system_info['isDtn'] = False
+    system_info = fill_missing_info(system_info, defaults, options, interactive)
+    if type(system_info['jobRuntimes']) == str:
+        system_info['jobRuntimes'] = [{"runtimeType": system_info['jobRuntimes']}]
+    #if interactive:
+    #    return {k: v for k, v in system_info.items() if v is not None}
+    #else:
+    #    return system_info
+    return {k: v for k, v in system_info.items() if v is not None}
+
+def getparser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-b', '--batch', help='Run in batch mode', dest='interactive', action='store_false')
+    parser.add_argument('-i', '--interactive', help='Run in interactive mode', dest='interactive', action='store_true')
+    return parser
+
+if __name__ == '__main__':
+    parser = getparser()
+    args = parser.parse_args()
+    system_info = get_system_info(args.interactive)
+    #print(system_info)
+    #sys.exit(1)
     step = ComputingSharesStep()
     partitions = step._run()
     d = []
     for p in partitions:
         part = convert_to_d(p)
-        if interactive:
-            part = fill_missing(part)
+        if args.interactive:
+            part = fill_missing_partition(part)
         d.append(part)
-    with open('batchLogicalQueues.json', 'w') as f:
-      json.dump(d, f, indent=4)
+    system_info['batchLogicalQueues'] = d
+    #with open('batchLogicalQueues.json', 'w') as f:
+    #  json.dump(d, f, indent=4)
+    with open('system_def.json', 'w') as f:
+      json.dump(system_info, f, indent=4)
+    print('System definition created in system_def.json')
