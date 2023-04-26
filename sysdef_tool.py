@@ -302,7 +302,7 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         self.debug("running "+cmd)
         status, output = subprocess.getstatusoutput(cmd)
         if status != 0:
-            raise StepError("scontrol failed: "+output+"\n")
+            raise Exception("scontrol failed: "+output+"\n")
         partition_strs = output.split("\n\n")
         partitions = [share for share in map(self._getShare,partition_strs) if self._includeQueue(share.Name)]
 
@@ -312,7 +312,7 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         self.debug("running "+cmd)
         status, output = subprocess.getstatusoutput(cmd)
         if status != 0:
-            raise StepError("scontrol failed: "+output+"\n")
+            raise Exception("scontrol failed: "+output+"\n")
         reservation_strs = output.split("\n\n")
         try:
             reservations = [self.includeQueue(share.PartitionName) for share in list(map(self._getReservation,reservation_strs))]
@@ -414,7 +414,7 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
 
         m = re.search(ReservationName,rsrv_str)
         if m is None:
-            raise StepError("didn't find 'ReservationName'")
+            raise Exception("didn't find 'ReservationName'")
         share.Name = m.group(1)
         share.EnvironmentID = ["urn:ogf:glue2:xsede.org:ExecutionEnvironment:%s.%s" % (share.Name,self.resource_name)]
         m = re.search(PartitionName,rsrv_str)
@@ -452,7 +452,7 @@ class ComputingSharesStep(computing_share_ComputingSharesStep):
         self.debug("running "+cmd)
         status, output = subprocess.getstatusoutput(cmd)
         if status != 0:
-            raise StepError("sacctmgr failed: "+output+"\n")
+            raise Exception("sacctmgr failed: "+output+"\n")
         out = output.split("\n")
         maxtresind = self._getfieldid(out[0], 'MaxTRES')
         fields = out[1].split('|')
@@ -490,7 +490,7 @@ def _getDuration(dstr):
     m = re.search("(\d+):(\d+):(\d+)",dstr)
     if m is not None:
         return int(m.group(3)) + 60 * (int(m.group(2)) + 60 * int(m.group(1)))
-    raise StepError("failed to parse duration: %s" % dstr)
+    raise Exception("failed to parse duration: %s" % dstr)
 
 def convert_to_d(p):
     d = {}
@@ -546,7 +546,7 @@ def get_hostname():
     cmd = "sacctmgr show cluster -nP "
     status, output = subprocess.getstatusoutput(cmd)
     if status != 0:
-        raise StepError("sacctmgr failed: "+output+"\n")
+        raise Exception("sacctmgr failed: "+output+"\n")
     clusters = [s.split("|")[0] for s in output.split('\n')]
     hostname = socket.gethostname()
     for cluster in clusters:
@@ -573,7 +573,7 @@ def get_runtime():
 def get_defaultqueue():
     status, output = subprocess.getstatusoutput('sinfo -o "%P"')
     if status != 0:
-        raise StepError("sinfo failed: " + output + '\n')
+        raise Exception("sinfo failed: " + output + '\n')
     queues = output.split('\n')
     for q in queues:
         if '*' in q:
