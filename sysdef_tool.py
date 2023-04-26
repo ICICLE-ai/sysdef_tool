@@ -492,6 +492,11 @@ def _getDuration(dstr):
         return int(m.group(3)) + 60 * (int(m.group(2)) + 60 * int(m.group(1)))
     raise Exception("failed to parse duration: %s" % dstr)
 
+def check_slurm():
+    if shutil.which('sinfo') is None:
+        print(f'SLURM cannot be found on this system, make sure you are executing this script on the system you would like to add to Tapis.\nNote: At this time {os.path.basename(__file__)} only works on systems that use SLURM as their scheduler.')
+        sys.exit(1)
+
 def convert_to_d(p):
     d = {}
     # List of needed queue information
@@ -655,9 +660,8 @@ def getparser():
 if __name__ == '__main__':
     parser = getparser()
     args = parser.parse_args()
+    check_slurm()
     system_info = get_system_info(args.interactive)
-    #print(system_info)
-    #sys.exit(1)
     step = ComputingSharesStep()
     partitions = step._run()
     d = []
