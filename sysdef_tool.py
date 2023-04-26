@@ -512,12 +512,6 @@ def convert_to_d(p):
 
 # Checks if they key-value pair is a valid option.
 # If not, raise appropriate error message to user
-def check_kvpair(key, val, info, options, interactive):
-    if interactive and key in ['id'] and (val == None or val == ''):
-        raise Exception(f'\"{key}\" is required')
-    #if val is None:
-    #    return
-
 def fill_missing_partition(partition):
     for k, v in partition.items():
         if v is None:
@@ -526,15 +520,17 @@ def fill_missing_partition(partition):
             partition[k] = newval
     return partition
 
-def fill_missing_info(info, defaults, options, interactive):
+def fill_missing_info(info, defaults, options, interactive, required):
     for k, v in info.items():
         if v is None:
             valid = False
             newval = ''
             if interactive:
                 while not valid:
-                    newval = input(f'Enter value of \"{k}\"' + (f' [{defaults[k]}]' if k in defaults else f' [{"/".join([str(k) for k in options[k]])}]' if k in options  else '') + ': ')
+                    newval = input(('(required) ' if k in required else '')  + f'Enter value of \"{k}\"' + (f' [{defaults[k]}]' if k in defaults else f' [{"/".join([str(k) for k in options[k]])}]' if k in options  else '') + ': ')
                     if k in options and newval != '' and newval not in options[k]:
+                        valid = False
+                    elif k in required and (newval == None or newval == '') and k not in defaults:
                         valid = False
                     else:
                         valid = True
@@ -542,7 +538,8 @@ def fill_missing_info(info, defaults, options, interactive):
                 newval = defaults[k]
             newval = int(newval) if type(newval) == str and newval.isdigit() else None if newval == '' else newval
             info[k] = newval
-        #check_kvpair(k, v, info, options, interactive)
+        if not interactive and k in required and (info[k] is None or info[k] ==  ''):
+            info[k] = 'MISSING'
     return info
 
 def get_hostname():
@@ -583,6 +580,7 @@ def get_defaultqueue():
             return q[:-1]
 
 def get_system_info(interactive):
+    # List of keys in system description
     system_info = dict.fromkeys(['id',
                                  'description',
                                  'systemType',
@@ -615,6 +613,7 @@ def get_system_info(interactive):
                                  'notes'
                                 ])
 
+    # Default values for keys, if key is not included it does not have a default
     defaults = {'host': get_hostname(),
                 'enabled' : True,
                 'effectiveUserId': '${apiUserId}',
@@ -627,21 +626,24 @@ def get_system_info(interactive):
                 'id': f'{get_hostname()}-{os.getlogin()}',
                 'batchDefaultLogicalQueue': get_defaultqueue(),
                 'jobWorkingDir': 'HOST_EVAL($HOME)/jobs/${JobUUID}'}
+    # List of acceptable options for keys, if key is not included anything can be used as a value for the key.
     options = {'jobRuntimes': ['SINGULARITY', 'DOCKER'],
                'useProxy': [True, False],
                'defaultAuthnMethod': ['PASSWORD', 'PKI_KEYS', 'ACCESS_KEY'],
                'systemType': ['LINUX', 'S3', 'IRODS']}
+    # list of keys that are required to be defined
+    required = ['id']
+    # List of system definition keys set automatically be this tool
     system_info['canExec'] = True
     system_info['canRunBatch'] = True
     system_info['batchScheduler'] = 'SLURM'
     system_info['isDtn'] = False
-    system_info = fill_missing_info(system_info, defaults, options, interactive)
+
+    system_info = fill_missing_info(system_info, defaults, options, interactive, required)
+
+    # Fix "jobRuntimes" value, since it is a special case.
     if type(system_info['jobRuntimes']) == str:
         system_info['jobRuntimes'] = [{"runtimeType": system_info['jobRuntimes']}]
-    #if interactive:
-    #    return {k: v for k, v in system_info.items() if v is not None}
-    #else:
-    #    return system_info
     return {k: v for k, v in system_info.items() if v is not None}
 
 def getparser():
