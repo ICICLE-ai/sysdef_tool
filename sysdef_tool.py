@@ -547,13 +547,16 @@ def fill_missing_info(info, defaults, options, interactive, required):
             info[k] = 'MISSING'
     return info
 
+def get_hostaddress():
+    return socket.gethostname()
+
 def get_hostname():
     cmd = "sacctmgr show cluster -nP "
     status, output = subprocess.getstatusoutput(cmd)
     if status != 0:
         raise Exception("sacctmgr failed: "+output+"\n")
     clusters = [s.split("|")[0] for s in output.split('\n')]
-    hostname = socket.gethostname()
+    hostname = get_hostaddress()
     for cluster in clusters:
         if cluster in hostname:
             return cluster
@@ -584,7 +587,7 @@ def get_defaultqueue():
         if '*' in q:
             return q[:-1]
 
-def get_system_info(interactive):
+def get_system_info(args):
     # List of keys in system description
     system_info = dict.fromkeys(['id',
                                  'description',
@@ -602,7 +605,7 @@ def get_system_info(interactive):
                                  'isDtn',
                                  'rootDir',
                                  'port',
-                                 #'useProxy',
+                                 'useProxy',
                                  #'proxyHost',
                                  #'proxyPort',
                                  'canExec',
@@ -619,7 +622,7 @@ def get_system_info(interactive):
                                 ])
 
     # Default values for keys, if key is not included it does not have a default
-    defaults = {'host': get_hostname(),
+    defaults = {'host': get_hostaddress(),
                 'enabled' : True,
                 'effectiveUserId': '${apiUserId}',
                 'defaultAuthnMethod': 'PKI_KEYS',
@@ -628,9 +631,11 @@ def get_system_info(interactive):
                 #'owner': os.getlogin(),
                 'systemType': 'LINUX',
                 'jobRuntimes': get_runtime(),
-                'id': f'{get_hostname()}-{os.getlogin()}',
+                'id': f'{get_hostname()}-tapis',
+                'description': f'System for running jobs on {get_hostname()}',
                 'batchDefaultLogicalQueue': get_defaultqueue(),
-                'jobWorkingDir': 'HOST_EVAL($HOME)/jobs/${JobUUID}'}
+                'useProxy': False,
+                'jobWorkingDir': f'{args.scratch_dir}'}
     # List of acceptable options for keys, if key is not included anything can be used as a value for the key.
     options = {'jobRuntimes': ['SINGULARITY', 'DOCKER'],
                'useProxy': [True, False],
@@ -642,9 +647,11 @@ def get_system_info(interactive):
     system_info['canExec'] = True
     system_info['canRunBatch'] = True
     system_info['batchScheduler'] = 'SLURM'
-    system_info['isDtn'] = False
+    #system_info['isDtn'] = False
+    system_info['jobMaxJobs'] = -1
+    system_info['jobMaxJobsPerUser'] = -1
 
-    system_info = fill_missing_info(system_info, defaults, options, interactive, required)
+    system_info = fill_missing_info(system_info, defaults, options, args.interactive, required)
 
     # Fix "jobRuntimes" value, since it is a special case.
     if type(system_info['jobRuntimes']) == str:
@@ -653,15 +660,15 @@ def get_system_info(interactive):
 
 def getparser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-b', '--batch', help='Run in batch mode', dest='interactive', action='store_false')
-    parser.add_argument('-i', '--interactive', help='Run in interactive mode', dest='interactive', action='store_true')
+    parser.add_argument('-i', '--interactive', help='Run in interactive mode', action=argparse.BooleanOptionalAction)
+    parser.add_argument('-s', '--scratch-dir', help='Path to scratch space where jobs should be run', dest='scratch_dir', required=True)
     return parser
 
 if __name__ == '__main__':
     parser = getparser()
     args = parser.parse_args()
     check_slurm()
-    system_info = get_system_info(args.interactive)
+    system_info = get_system_info(args)
     step = ComputingSharesStep()
     partitions = step._run()
     d = []
