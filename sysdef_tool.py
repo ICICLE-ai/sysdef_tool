@@ -621,8 +621,12 @@ def get_system_info(args):
                                  'notes'
                                 ])
 
+    if args.host:
+        host = args.host
+    else:
+        host = get_hostaddress()
     # Default values for keys, if key is not included it does not have a default
-    defaults = {'host': get_hostaddress(),
+    defaults = {'host': host,
                 'enabled' : True,
                 'effectiveUserId': '${apiUserId}',
                 'defaultAuthnMethod': 'PKI_KEYS',
@@ -661,12 +665,17 @@ def get_system_info(args):
 def getparser():
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--interactive', help='Run in interactive mode', action=argparse.BooleanOptionalAction)
-    parser.add_argument('-s', '--scratch-dir', help='Path to scratch space where jobs should be run', dest='scratch_dir', required=True)
+    parser.add_argument('--host', help='Override default host value', dest='host')
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--scratch-dir', help='Path to scratch space where jobs should be run', dest='scratch_dir')
+    group.add_argument('--scratch-env', help='Path to scratch space where jobs should be run', dest='scratch_env')
     return parser
 
 if __name__ == '__main__':
     parser = getparser()
     args = parser.parse_args()
+    if args.scratch_env:
+        args.scratch_dir = f'HOST_EVAL(${args.scratch_env})'
     check_slurm()
     system_info = get_system_info(args)
     step = ComputingSharesStep()
