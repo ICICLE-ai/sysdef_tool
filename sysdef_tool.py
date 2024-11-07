@@ -509,7 +509,7 @@ def convert_to_d(p):
     d['minCoresPerNode'] = 1
     d['maxCoresPerNode'] = p.MaxCPUsPerNode
     d['minMemoryMB'] = 0
-    d['maxMemoryMB'] = p.MaxMainMemory
+    d['maxMemoryMB'] = p.MaxMainMemory if p.MaxMainMemory else -1
     d['minMinutes'] = int(p.MinWallTime/60.0) if p.MinWallTime else 0
     if p.MaxWallTime:
         d['maxMinutes'] = int(p.MaxWallTime/60.0)
